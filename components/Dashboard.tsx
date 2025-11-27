@@ -63,8 +63,8 @@ export default function Dashboard() {
                 light_state: data32.light_state ?? 0,
             });
 
-            // Fetch ESP8266 Data (Proxied)
-            const res8266 = await fetch('/api/esp8266/proxy?endpoint=status');
+            // Fetch ESP8266 Data (from our API store)
+            const res8266 = await fetch('/api/esp8266/data');
             const data8266 = await res8266.json();
             setEsp8266Data(data8266);
 
@@ -117,11 +117,12 @@ export default function Dashboard() {
 
     const toggleAlarm = async () => {
         setAlarmLoading(true);
-        const action = esp8266Data.alarm_state ? 'alarm_off' : 'alarm_on';
+        const nextOverride = esp8266Data.alarm_state ? 'off' : 'on';
         try {
-            await fetch('/api/esp8266/proxy', {
+            await fetch('/api/esp8266/config', {
                 method: 'POST',
-                body: JSON.stringify({ action }),
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ alarm_override: nextOverride }),
             });
             // Optimistic update
             setEsp8266Data(prev => ({ ...prev, alarm_state: prev.alarm_state ? 0 : 1 }));
