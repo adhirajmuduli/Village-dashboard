@@ -1,8 +1,18 @@
 import { NextResponse } from 'next/server';
+import { kv } from '@vercel/kv';
 export const dynamic = 'force-dynamic';
 
 // Simple in-memory store (ephemeral on serverless)
-let latestEsp8266 = {
+type Esp8266Payload = {
+  temperature: number;
+  humidity: number;
+  motion: number; // 0|1
+  smoke: number;  // 0|1
+  alarm_state: number; // 0|1
+  last_updated: number;
+};
+
+const DEFAULT_8266: Esp8266Payload = {
   temperature: 0,
   humidity: 0,
   motion: 0,
@@ -29,7 +39,7 @@ export async function HEAD() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    latestEsp8266 = {
+    const next: Esp8266Payload = {
       temperature: Number(body.temperature) || 0,
       humidity: Number(body.humidity) || 0,
       motion: Number(body.motion) === 1 ? 1 : 0,
@@ -37,6 +47,7 @@ export async function POST(request: Request) {
       alarm_state: Number(body.alarm_state) === 1 ? 1 : 0,
       last_updated: Date.now(),
     };
+    await kv.set('esp8266:latest', next);
     return NextResponse.json({ success: true });
   } catch {
     return NextResponse.json({ success: false, message: 'Invalid JSON' }, { status: 400 });
@@ -54,7 +65,7 @@ export async function GET(request: Request) {
     searchParams.get('ingest') === '1';
 
   if (hasIngestParams) {
-    latestEsp8266 = {
+    const next: Esp8266Payload = {
       temperature: Number(searchParams.get('temperature')) || 0,
       humidity: Number(searchParams.get('humidity')) || 0,
       motion: Number(searchParams.get('motion')) === 1 ? 1 : 0,
@@ -62,8 +73,10 @@ export async function GET(request: Request) {
       alarm_state: Number(searchParams.get('alarm_state')) === 1 ? 1 : 0,
       last_updated: Date.now(),
     };
+    await kv.set('esp8266:latest', next);
     return NextResponse.json({ success: true });
   }
 
-  return NextResponse.json(latestEsp8266);
+  const stored = (await kv.get<Esp8266Payload>('esp8266:latest')) || DEFAULT_8266;
+  return NextResponse.json(stored);
 }

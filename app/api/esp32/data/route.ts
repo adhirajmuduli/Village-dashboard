@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { kv } from '@vercel/kv';
 export const dynamic = 'force-dynamic';
 
 type Esp32Payload = {
@@ -11,7 +12,7 @@ type Esp32Payload = {
 
 // In-memory store for demonstration purposes
 // In a real app, use a database (Redis, Postgres, etc.)
-let latestData: Esp32Payload = {
+const DEFAULT_ESP32: Esp32Payload = {
   water_level: 0,
   motion: "0",
   pump_state: 0,
@@ -45,14 +46,13 @@ export async function POST(request: Request) {
       light_state: body.light_state === 1 || body.light_state === "1" ? 1 : 0,
     };
 
-    // Update store
-    latestData = {
-      ...latestData,
+    const next = {
+      ...(await kv.get<Esp32Payload>('esp32:latest')) || DEFAULT_ESP32,
       ...incoming,
       last_updated: Date.now(),
-    };
+    } satisfies Esp32Payload;
 
-    console.log("Received ESP32 Data:", latestData);
+    await kv.set('esp32:latest', next);
 
     return NextResponse.json({ success: true, message: "Data received" });
   } catch {
@@ -77,13 +77,15 @@ export async function GET(request: Request) {
       light_state: (searchParams.get('light_state') === '1') ? 1 : 0,
     } as const;
 
-    latestData = {
-      ...latestData,
+    const next = {
+      ...(await kv.get<Esp32Payload>('esp32:latest')) || DEFAULT_ESP32,
       ...incoming,
       last_updated: Date.now(),
-    };
+    } satisfies Esp32Payload;
+    await kv.set('esp32:latest', next);
     return NextResponse.json({ success: true });
   }
 
-  return NextResponse.json(latestData);
+  const stored = (await kv.get<Esp32Payload>('esp32:latest')) || DEFAULT_ESP32;
+  return NextResponse.json(stored);
 }

@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
+import { kv } from '@vercel/kv';
 export const dynamic = 'force-dynamic';
 
-// In-memory config (ephemeral on serverless)
-let esp8266Config = {
+// KV key: 'esp8266:config'
+const DEFAULT_8266_CONFIG = {
   alarm_override: 'auto' as 'auto' | 'on' | 'off',
 };
 
 export async function GET() {
-  return NextResponse.json(esp8266Config);
+  const stored = (await kv.get<typeof DEFAULT_8266_CONFIG>('esp8266:config')) || DEFAULT_8266_CONFIG;
+  return NextResponse.json(stored);
 }
 
 export async function OPTIONS() {
@@ -42,12 +44,13 @@ export async function POST(request: Request) {
       );
     }
 
-    esp8266Config = {
-      ...esp8266Config,
+    const current = (await kv.get<typeof DEFAULT_8266_CONFIG>('esp8266:config')) || DEFAULT_8266_CONFIG;
+    const next = {
+      ...current,
       ...(alarm_override ? { alarm_override } : {}),
-    };
-
-    return NextResponse.json(esp8266Config);
+    } as const;
+    await kv.set('esp8266:config', next);
+    return NextResponse.json(next);
   } catch {
     return NextResponse.json({ success: false, message: 'Invalid JSON' }, { status: 400 });
   }
