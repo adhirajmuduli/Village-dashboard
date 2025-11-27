@@ -15,6 +15,7 @@ const char* password = "12345609";
 #define PIR_PIN 14        // D5 = GPIO14
 #define MQ2_PIN 12        // D6 = GPIO12
 #define BUZZER_PIN 13     // D7 = GPIO13
+#define BUZZER_ACTIVE_HIGH 1
 
 DHT dht(DHTPIN, DHTTYPE);
 bool buzzerState = false;
@@ -45,14 +46,14 @@ void logSensorValues(const char* origin) {
   Serial.print("Smoke: "); Serial.println(smoke);
   Serial.print("Temp: "); Serial.println(isnan(temp) ? -1 : temp);
   Serial.print("Humidity: "); Serial.println(isnan(hum) ? -1 : hum);
-  Serial.print("Alarm state: "); Serial.println(digitalRead(BUZZER_PIN));
+  Serial.print("Alarm state: "); Serial.println(buzzerState ? 1 : 0);
 }
 
 void setBuzzer(bool on, const char* reason) {
   if (buzzerState == on) return;
   buzzerState = on;
   Serial.print("[ALARM] "); Serial.print(reason); Serial.print(" -> "); Serial.println(on ? "ON" : "OFF");
-  digitalWrite(BUZZER_PIN, on ? HIGH : LOW);
+  digitalWrite(BUZZER_PIN, on ? (BUZZER_ACTIVE_HIGH ? HIGH : LOW) : (BUZZER_ACTIVE_HIGH ? LOW : HIGH));
 }
 
 void activateAlarm(const char* reason = "Manual") {
@@ -75,8 +76,8 @@ void postStatusToBackend() {
   doc["temperature"] = isnan(t) ? -1 : t;
   doc["humidity"] = isnan(h) ? -1 : h;
   doc["motion"] = digitalRead(PIR_PIN);
-  doc["smoke"] = digitalRead(MQ2_PIN);
-  doc["alarm_state"] = digitalRead(BUZZER_PIN);
+  doc["smoke"] = (digitalRead(MQ2_PIN) == LOW) ? 1 : 0; // normalize to active-high
+  doc["alarm_state"] = buzzerState ? 1 : 0;
 
   String payload;
   serializeJson(doc, payload);
@@ -84,10 +85,21 @@ void postStatusToBackend() {
   if (http.begin(client, DATA_URL)) {
     http.addHeader("Content-Type", "application/json");
     int code = http.POST(payload);
-    if (code > 0) {
+    if (code > 0 && code < 300) {
       Serial.printf("[HTTP] POST %s -> %d\n", DATA_URL.c_str(), code);
     } else {
-      Serial.printf("[HTTP] POST failed: %s\n", http.errorToString(code).c_str());
+      Serial.printf("[HTTP] POST failed code=%d, trying GET-ingest fallback\n", code);
+      http.end();
+      String qs = String(DATA_URL) + "?ingest=1";
+      qs += "&temperature=" + String(isnan(t) ? 0 : t, 2);
+      qs += "&humidity=" + String(isnan(h) ? 0 : h, 2);
+      qs += "&motion=" + String(digitalRead(PIR_PIN));
+      qs += "&smoke=" + String((digitalRead(MQ2_PIN) == LOW) ? 1 : 0);
+      qs += "&alarm_state=" + String(buzzerState ? 1 : 0);
+      if (http.begin(client, qs)) {
+        int getCode = http.GET();
+        Serial.printf("[HTTP] GET-ingest -> %d\n", getCode);
+      }
     }
     http.end();
   } else {
@@ -133,7 +145,7 @@ void setup() {
   pinMode(PIR_PIN, INPUT);
   pinMode(MQ2_PIN, INPUT);
   pinMode(BUZZER_PIN, OUTPUT);
-  digitalWrite(BUZZER_PIN, LOW);
+  digitalWrite(BUZZER_PIN, BUZZER_ACTIVE_HIGH ? LOW : HIGH);
 
   dht.begin();
 

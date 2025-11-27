@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
 
 type OverrideMode = 'auto' | 'on' | 'off';
 
@@ -13,6 +14,21 @@ let config = { ...DEFAULT_CONFIG };
 
 export async function GET() {
     return NextResponse.json(config);
+}
+
+export async function OPTIONS() {
+    return new Response(null, {
+        status: 204,
+        headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+        },
+    });
+}
+
+export async function HEAD() {
+    return new Response(null, { status: 200 });
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);

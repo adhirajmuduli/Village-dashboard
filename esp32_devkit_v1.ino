@@ -1,14 +1,16 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 
 // ---------------------- USER SETTINGS ---------------------- //
-const char* ssid     = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
+const char* ssid     = "Triya";
+const char* password = "12345609";
 
-// API ENDPOINTS (update with your server base URL)
-String uploadURL = "http://your-server-address/api/esp32/data";
-String configURL = "http://your-server-address/api/esp32/config";
+// API ENDPOINTS (Hosted on Vercel)
+const char* BASE_URL32 = "https://triyamudulivillage-dashboard-qjos0d47n-adhirajmudulis-projects.vercel.app";
+String uploadURL = String(BASE_URL32) + "/api/esp32/data";
+String configURL = String(BASE_URL32) + "/api/esp32/config";
 
 // ---------------------- PINS ---------------------- //
 #define SENSOR_PIN 34   // Analog capacitive water sensor
@@ -72,8 +74,10 @@ float getWaterLevelPercent() {
 void fetchRemoteConfig() {
   if (WiFi.status() != WL_CONNECTED) return;
 
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
-  http.begin(configURL);
+  http.begin(client, configURL);
 
   int code = http.GET();
   if (code == 200) {
@@ -117,8 +121,10 @@ void fetchRemoteConfig() {
 void uploadData(int waterLevel, bool motionDetected, int pumpState, int lightState) {
   if (WiFi.status() != WL_CONNECTED) return;
 
+  WiFiClientSecure client;
+  client.setInsecure();
   HTTPClient http;
-  http.begin(uploadURL);
+  http.begin(client, uploadURL);
   http.addHeader("Content-Type", "application/json");
 
   StaticJsonDocument<200> doc;
@@ -131,11 +137,26 @@ void uploadData(int waterLevel, bool motionDetected, int pumpState, int lightSta
   serializeJson(doc, json);
 
   int code = http.POST(json);
-  String response = http.getString();
-
-  Serial.println("UPLOAD RESPONSE: " + response);
-
-  http.end();
+  if (code > 0 && code < 300) {
+    Serial.printf("[ESP32] POST %s -> %d\n", uploadURL.c_str(), code);
+    String response = http.getString();
+    Serial.println("UPLOAD RESPONSE: " + response);
+    http.end();
+  } else {
+    Serial.printf("[ESP32] POST failed code=%d, trying GET-ingest fallback\n", code);
+    http.end();
+    // GET-based fallback ingestion
+    String qs = String(uploadURL) + "?ingest=1";
+    qs += "&water_level=" + String(waterLevel);
+    qs += "&motion=" + String(motionDetected ? 1 : 0);
+    qs += "&pump_state=" + String(pumpState);
+    qs += "&light_state=" + String(lightState);
+    if (http.begin(client, qs)) {
+      int getCode = http.GET();
+      Serial.printf("[ESP32] GET-ingest -> %d\n", getCode);
+      http.end();
+    }
+  }
 }
 
 // ---------------------- SETUP ---------------------- //
@@ -166,7 +187,7 @@ void loop() {
 
   // ------------------- 1. Remote Config Sync ------------------- //
   static unsigned long lastConfigUpdate = 0;
-  if (millis() - lastConfigUpdate > 10000) {
+  if (millis() - lastConfigUpdate > 2000) {
     fetchRemoteConfig();
     lastConfigUpdate = millis();
   }
@@ -221,9 +242,9 @@ void loop() {
     lastLightState = lightShouldBeOn;
   }
 
-  // ------------------- 4. Upload data every 10s ------------------- //
+  // ------------------- 4. Upload data every ~2s ------------------- //
   static unsigned long lastUpload = 0;
-  if (millis() - lastUpload > 10000) {
+  if (millis() - lastUpload > 2000) {
     Serial.println("Uploading telemetry payload...");
     uploadData(waterPercent, motionDetected, pumpShouldRun ? 1 : 0, lightShouldBeOn ? 1 : 0);
     lastUpload = millis();

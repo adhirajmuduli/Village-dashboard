@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
 
 type Esp32Payload = {
   water_level: number;
@@ -17,6 +18,21 @@ let latestData: Esp32Payload = {
   light_state: 0,
   last_updated: Date.now(),
 };
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    },
+  });
+}
+
+export async function HEAD() {
+  return new Response(null, { status: 200 });
+}
 
 export async function POST(request: Request) {
   try {
@@ -44,6 +60,30 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const hasIngestParams =
+    searchParams.has('water_level') ||
+    searchParams.has('motion') ||
+    searchParams.has('pump_state') ||
+    searchParams.has('light_state') ||
+    searchParams.get('ingest') === '1';
+
+  if (hasIngestParams) {
+    const incoming = {
+      water_level: Number(searchParams.get('water_level')) || 0,
+      motion: String(searchParams.get('motion') ?? '0'),
+      pump_state: (searchParams.get('pump_state') === '1') ? 1 : 0,
+      light_state: (searchParams.get('light_state') === '1') ? 1 : 0,
+    } as const;
+
+    latestData = {
+      ...latestData,
+      ...incoming,
+      last_updated: Date.now(),
+    };
+    return NextResponse.json({ success: true });
+  }
+
   return NextResponse.json(latestData);
 }
