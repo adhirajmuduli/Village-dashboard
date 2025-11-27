@@ -12,15 +12,6 @@ type Esp8266Payload = {
   last_updated: number;
 };
 
-const DEFAULT_8266: Esp8266Payload = {
-  temperature: 0,
-  humidity: 0,
-  motion: 0,
-  smoke: 0,
-  alarm_state: 0,
-  last_updated: Date.now(),
-};
-
 export async function OPTIONS() {
   return new Response(null, {
     status: 204,
@@ -77,6 +68,20 @@ export async function GET(request: Request) {
     return NextResponse.json({ success: true });
   }
 
-  const stored = (await kv.get<Esp8266Payload>('esp8266:latest')) || DEFAULT_8266;
+  // Demo fallback if no data or stale
+  const STALE_MS = 15_000;
+  const stored = await kv.get<Esp8266Payload>('esp8266:latest');
+  const now = Date.now();
+  if (!stored || now - stored.last_updated > STALE_MS) {
+    const mock: Esp8266Payload = {
+      temperature: 26 + Math.round(Math.random() * 6),
+      humidity: 50 + Math.round(Math.random() * 20),
+      motion: Math.random() < 0.2 ? 1 : 0,
+      smoke: 0,
+      alarm_state: 0,
+      last_updated: now,
+    };
+    return NextResponse.json(mock, { headers: { 'x-demo-data': '1' } });
+  }
   return NextResponse.json(stored);
 }

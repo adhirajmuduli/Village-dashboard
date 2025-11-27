@@ -86,6 +86,23 @@ export async function GET(request: Request) {
     return NextResponse.json({ success: true });
   }
 
-  const stored = (await kv.get<Esp32Payload>('esp32:latest')) || DEFAULT_ESP32;
+  // Demo fallback if no data or stale
+  const STALE_MS = 15_000;
+  const stored = await kv.get<Esp32Payload>('esp32:latest');
+  const now = Date.now();
+  if (!stored || now - stored.last_updated > STALE_MS) {
+    const wl = 35 + Math.round(Math.random() * 50); // 35-85%
+    const motion = Math.random() < 0.1 ? '1' : '0';
+    const pump = wl < 30 ? 1 : 0;
+    const light = motion === '1' ? 1 : 0;
+    const mock: Esp32Payload = {
+      water_level: wl,
+      motion,
+      pump_state: pump,
+      light_state: light,
+      last_updated: now,
+    };
+    return NextResponse.json(mock, { headers: { 'x-demo-data': '1' } });
+  }
   return NextResponse.json(stored);
 }
